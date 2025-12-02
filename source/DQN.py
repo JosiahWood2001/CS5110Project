@@ -4,29 +4,30 @@ import torch.optim as optim
 import random
 import numpy as np
 from collections import deque
+import torch.nn.functional as F
 
 class DQN(nn.Module):
-    def __init__(self, obs_shape, n_actions):
+    def __init__(self, input_dim, n_actions):
         super().__init__()
-        H, W, C = obs_shape
-        self.net = nn.Sequential(
-            nn.Conv2d(C, 32, kernel_size=8, stride=4),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(64*7*7, 512),
-            nn.ReLU(),
-            nn.Linear(512, n_actions)
-        )
+        self.fc1 = nn.Linear(input_dim, 128)
+        self.fc2 = nn.Linear(128, 128)
+        self.out = nn.Linear(128, n_actions)
+        
+        # For tracking losses
+        self.loss_history = []
 
     def forward(self, x):
-        if x.ndim == 3:
-            x = x.unsqueeze(0)
-        x = x.permute(0, 3, 1, 2)
-        return self.net(x / 255.0)
+        if x.dim() == 1:
+            x = x.unsqueeze(0)  # add batch dimension if missing
+        
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        return self.out(x)
+    
+    # Method to record loss during training
+    def record_loss(self, loss):
+        self.last_loss = loss.item()
+        self.loss_history.append(self.last_loss)
 
 class ReplayBuffer:
     def __init__(self, size=50000):

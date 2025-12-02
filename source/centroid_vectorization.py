@@ -23,7 +23,6 @@ def extract_centroid(mask):
 
     cx = int(M["m10"] / M["m00"])
     cy = int(M["m01"] / M["m00"])
-    print(cx, cy)
     return (cx, cy), contour
 
 
@@ -48,35 +47,15 @@ def extract_orientation(contour):
 
 def detect_ship_centroids(obs_frame):
     # If stacked frames: take most recent frame
-    if obs_frame.ndim == 3 and obs_frame.shape[-1] > 3:
-        frame = obs_frame[:, :, -1]  # last frame of stack
-        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+    if obs_frame.shape[2] == 12:
+        frame = obs_frame[:, :, -3:]  # last RGB frame
     else:
-        # assume 84x84x3 or 84x84x1
-        frame = obs_frame.copy()
-        if frame.ndim == 2:
-            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+        frame = obs_frame
 
-    frame = frame.astype(np.uint8)
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    print("Shape of hsv:", hsv.shape)
-    center_pixels = hsv[hsv.shape[0]//2-5:hsv.shape[0]//2+5, hsv.shape[1]//2-5:hsv.shape[1]//2+5]
-    print("Sample center HSV pixels:")
-    print(center_pixels.reshape(-1,3))
-    plt.subplot(1,3,1)
-    plt.title('Hue channel')
-    plt.imshow(hsv[:,:,0], cmap='hsv')
-    plt.colorbar()
-    plt.subplot(1,3,2)
-    plt.title('Saturation channel')
-    plt.imshow(hsv[:,:,1], cmap='gray')
-    plt.colorbar()
-    plt.subplot(1,3,3)
-    plt.title('Value channel')
-    plt.imshow(hsv[:,:,2], cmap='gray')
-    plt.colorbar()
-    plt.show()
-    cv2.imwrite('debug_frame.png', frame)
+    if frame.dtype != np.uint8:
+        frame = np.clip(frame, 0, 255).astype(np.uint8)
+    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
 
     # Blue ship mask (tune as needed)
     lower_blue = np.array([90, 50, 50])
@@ -87,8 +66,6 @@ def detect_ship_centroids(obs_frame):
     lower_green = np.array([40, 40, 40])
     upper_green = np.array([80, 255, 255])
     mask_green = cv2.inRange(hsv, lower_green, upper_green)
-    print(f"Blue mask nonzero pixels: {np.count_nonzero(mask_blue)}")
-    print(f"Green mask nonzero pixels: {np.count_nonzero(mask_green)}")
 
     blue_centroid, blue_contour = extract_centroid(mask_blue)
     green_centroid, green_contour   = extract_centroid(mask_green)

@@ -16,14 +16,13 @@ env = supersuit.frame_stack_v1(env, 4)
 env = supersuit.dtype_v0(env, np.float32)
 
 observations, infos = env.reset()
-
 for agent, ob in observations.items():
     print("OBs shape for", agent, ":", ob.shape)
     break
 
 #setting up DQN agent
 dqn_agent = env.agents[0]
-observation_shape = env.observation_space(dqn_agent).shape
+observation_shape = 8
 n_actions = env.action_space(dqn_agent).n
 policy = DQN(observation_shape, n_actions)
 target = DQN(observation_shape, n_actions)
@@ -46,16 +45,30 @@ update_target_every = 2000
 step_count = 0
 episode=LOAD_EPISODE
 max_episodes=10+LOAD_EPISODE
+
+last_valid_feature_vec = {}
 while True:
     while env.agents:
         actions = {}
         for agent, ob in observations.items():
-
+            centroid_info = detect_ship_centroids(ob)
+            feature_vec = build_feature_vector(agent, centroid_info)
+            
+            if feature_vec is None:
+                if agent in last_valid_feature_vec:
+                    feature_vec = last_valid_feature_vec[agent]
+                else:
+                    print(f"Warning: No valid feature vector for agent {agent}, skipping action selection.")
+                    continue
+            else:
+                last_valid_feature_vec[agent] = feature_vec
             if random.random() < epsilon:
                 actions[agent] = env.action_space(agent).sample()
             else:
                 with torch.no_grad():
-                    inp = torch.tensor(ob, dtype=torch.float32).unsqueeze(0)
+                    inp = torch.tensor(feature_vec, dtype=torch.float32)
+                    if inp.dim() == 1:
+                        inp = inp.unsqueeze(0)
                     q = policy(inp)
                     actions[agent] = int(torch.argmax(q))
 
@@ -84,7 +97,6 @@ while True:
 
                 # Combine partial rewards with base reward
                 combined_reward = base_reward + alignment_reward + survival_reward + proximity_reward + shoot_reward
-
                 # Save transition with vector input and combined reward
                 buffer.add((
                     feature_vec.astype(np.float32),        # vectorized observation instead of raw pixels
@@ -95,7 +107,6 @@ while True:
                 ))
             else:
                 print(f"Warning: Could not build feature vector for agent {agent}")
-                exit()
 
             
 
@@ -117,6 +128,7 @@ while True:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            policy.loss_history.append(loss.item())
 
         # --- slowly reduce epsilon ---
         epsilon = max(0.05, epsilon * 0.9999)
@@ -125,7 +137,12 @@ while True:
         if step_count % update_target_every == 0:
             target.load_state_dict(policy.state_dict())
     episode += 1
-    print(f"Episode {episode} completed.")
+    if policy.loss_history:
+        avg_loss = sum(policy.loss_history) / len(policy.loss_history)
+        print(f"Episode {episode} completed. Average loss: {avg_loss:.6f}")
+        policy.loss_history.clear()  # reset for next episode
+    else:
+        print(f"Episode {episode} completed.")
     if episode % 10 == 0:
         
         exit()

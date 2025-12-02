@@ -8,17 +8,24 @@ from collections import deque
 class DQN(nn.Module):
     def __init__(self, obs_shape, n_actions):
         super().__init__()
-        C, H, W = obs_shape
+        H, W, C = obs_shape
         self.net = nn.Sequential(
-            nn.Conv2d(C, 32, kernel_size=8, stride=4), nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2), nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1), nn.ReLU(),
+            nn.Conv2d(C, 32, kernel_size=8, stride=4),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1),
+            nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(64*7*7, 512), nn.ReLU(),
+            nn.Linear(64*7*7, 512),
+            nn.ReLU(),
             nn.Linear(512, n_actions)
         )
 
     def forward(self, x):
+        if x.ndim == 3:
+            x = x.unsqueeze(0)
+        x = x.permute(0, 3, 1, 2)
         return self.net(x / 255.0)
 
 class ReplayBuffer:

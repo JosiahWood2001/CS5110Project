@@ -6,6 +6,7 @@ import torch.optim as optim
 import torch.nn as nn
 import random
 import numpy as np
+import cv2
 from collections import deque
 from centroid_vectorization import detect_ship_centroids, build_feature_vector
 
@@ -16,9 +17,6 @@ env = supersuit.frame_stack_v1(env, 4)
 env = supersuit.dtype_v0(env, np.float32)
 
 observations, infos = env.reset()
-for agent, ob in observations.items():
-    print("OBs shape for", agent, ":", ob.shape)
-    break
 
 #setting up DQN agent
 dqn_agent = env.agents[0]
@@ -27,7 +25,10 @@ n_actions = env.action_space(dqn_agent).n
 policy = DQN(observation_shape, n_actions)
 target = DQN(observation_shape, n_actions)
 
-LOAD_EPISODE = 0
+for agent, ob in observations.items():
+    print("OBs shape for", agent, ":", ob.shape)
+
+LOAD_EPISODE = 10
 if LOAD_EPISODE>0:
     policy.load_state_dict(torch.load(f"dqn_spacewar_ep{LOAD_EPISODE}.pth"))
     target.load_state_dict(torch.load(f"target_spacewar_ep{LOAD_EPISODE}.pth"))
@@ -44,14 +45,19 @@ batch_size = 32
 update_target_every = 2000
 step_count = 0
 episode=LOAD_EPISODE
-max_episodes=10+LOAD_EPISODE
+max_episodes=100+LOAD_EPISODE
 
 last_valid_feature_vec = {}
+count=0
 while True:
     while env.agents:
+        count+=1
         actions = {}
-        for agent, ob in observations.items():
-            centroid_info = detect_ship_centroids(ob)
+        for agent in env.agents:
+            ob = observations.get(agent, None)
+            if ob is None:
+                print(f"Warning: Observation missing for agent {agent}")
+            centroid_info = detect_ship_centroids(ob,True if count%100==0 else False)
             feature_vec = build_feature_vector(agent, centroid_info)
             
             if feature_vec is None:
@@ -59,7 +65,7 @@ while True:
                     feature_vec = last_valid_feature_vec[agent]
                 else:
                     print(f"Warning: No valid feature vector for agent {agent}, skipping action selection.")
-                    continue
+                    actions[agent] = env.action_space(agent).sample()
             else:
                 last_valid_feature_vec[agent] = feature_vec
             if random.random() < epsilon:
@@ -71,10 +77,7 @@ while True:
                         inp = inp.unsqueeze(0)
                     q = policy(inp)
                     actions[agent] = int(torch.argmax(q))
-
         next_obs, rewards, terms, truncs, infos = env.step(actions)
-        
-
         # save transitions per agent
         for agent in observations:
 
@@ -106,6 +109,7 @@ while True:
                     terms[agent] or truncs[agent]
                 ))
             else:
+                print(centroid_info)
                 print(f"Warning: Could not build feature vector for agent {agent}")
 
             
@@ -144,8 +148,6 @@ while True:
     else:
         print(f"Episode {episode} completed.")
     if episode % 10 == 0:
-        
-        exit()
         torch.save(policy.state_dict(), f"dqn_spacewar_ep{episode}.pth")
         torch.save(target.state_dict(), f"target_spacewar_ep{episode}.pth")
         print(f"Saved checkpoint at episode {episode}")

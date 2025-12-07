@@ -3,27 +3,32 @@ import cv2
 import matplotlib.pyplot as plt
 
 
-SHIP1_COLOR = [50, 50, 200]   # approx (blue-ish)
-SHIP2_COLOR = [73, 235, 189]   # approx (green-ish)
+blue_rgb = np.array([104, 186, 220], dtype=np.uint8)
+green_rgb = np.array([111, 217, 158], dtype=np.uint8)
+
+# Compute lower and upper bounds for blue, clamp between 0 and max HSV values
+lower_green = np.array([35, 40, 40])
+upper_green = np.array([100, 255, 255])   # hue upper extended, value max 200 to avoid bright white-ish
+
+# Blue bounds
+lower_blue = np.array([105, 60, 40])
+upper_blue = np.array([130, 255, 255])
 
 def extract_centroid(mask):
-    """
-    Returns (cx, cy), contour
-    """
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
     if not contours:
-        return None, None
+        return None, None  # no contours found
 
-    contour = max(contours, key=cv2.contourArea)
-    M = cv2.moments(contour)
+    # Use the largest contour (no size filtering)
+    largest_contour = max(contours, key=cv2.contourArea)
 
+    M = cv2.moments(largest_contour)
     if M["m00"] == 0:
-        return None, contour
+        return None, None  # avoid division by zero
 
     cx = int(M["m10"] / M["m00"])
     cy = int(M["m01"] / M["m00"])
-    return (cx, cy), contour
+    return (cx, cy), largest_contour
 
 
 def extract_orientation(contour):
@@ -32,7 +37,7 @@ def extract_orientation(contour):
     Returns angle in radians or None if contour not found.
     """
 
-    if contour is None or len(contour) < 5:
+    if contour is None or len(contour) < 2:
         return None
 
     pts = contour.reshape(-1, 2).astype(np.float32)
@@ -45,31 +50,28 @@ def extract_orientation(contour):
     return angle
 
 
-def detect_ship_centroids(obs_frame):
+def detect_ship_centroids(obs_frame,display=False):
     # If stacked frames: take most recent frame
     if obs_frame.shape[2] == 12:
         frame = obs_frame[:, :, -3:]  # last RGB frame
     else:
         frame = obs_frame
-
+    frame = frame[14:-8, :, :]
     if frame.dtype != np.uint8:
         frame = np.clip(frame, 0, 255).astype(np.uint8)
     frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
     hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
 
-    # Blue ship mask (tune as needed)
-    lower_blue = np.array([90, 50, 50])
-    upper_blue = np.array([130, 255, 255])
+    # Then to get masks on your hsv frame:
     mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
-
-    # Green ship mask (tune as needed)
-    lower_green = np.array([40, 40, 40])
-    upper_green = np.array([80, 255, 255])
     mask_green = cv2.inRange(hsv, lower_green, upper_green)
 
     blue_centroid, blue_contour = extract_centroid(mask_blue)
-    green_centroid, green_contour   = extract_centroid(mask_green)
-
+    green_centroid, green_contour = extract_centroid(mask_green)
+    if blue_centroid is not None:
+        blue_centroid = (blue_centroid[0], blue_centroid[1] + 10)
+    if green_centroid is not None:
+        green_centroid = (green_centroid[0], green_centroid[1] + 10)
     blue_angle = extract_orientation(blue_contour)
     green_angle  = extract_orientation(green_contour)
 
@@ -87,18 +89,18 @@ def estimate_orientation(prev_cx, prev_cy, cx, cy):
     return angle
 
 def build_feature_vector(agent, centroid_info):
-    if agent.startswith("second"):
+    if agent.startswith("first"):
         own_pos = centroid_info["blue_pos"]
         own_angle = centroid_info["blue_angle"]
         enemy_pos = centroid_info["green_pos"]
         enemy_angle = centroid_info["green_angle"]
-    elif agent.startswith("first"):
+    elif agent.startswith("second"):
         own_pos = centroid_info["green_pos"]
         own_angle = centroid_info["green_angle"]
         enemy_pos = centroid_info["blue_pos"]
         enemy_angle = centroid_info["blue_angle"]
     else:
-        # Unknown agent
+        print("Fatal Error: Invalid agent")
         return None
 
     # Check data validity

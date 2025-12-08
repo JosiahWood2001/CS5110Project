@@ -260,6 +260,6 @@ def train(MA_train, elite_pool,render=False,load_files=["",""]):
 
 
 if __name__ == "__main__":
-    train(False,elite_pool,render=True,load_files=[
+    train(True,elite_pool,render=True,load_files=[
         "",
         ""])

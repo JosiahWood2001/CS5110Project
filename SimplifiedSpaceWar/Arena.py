@@ -13,7 +13,7 @@ def load_model(path,input_size,n_actions):
     except:
         print("No saved model found:",path)
     return model
-
+number_episodes_trained=0
 #follows all steps of training -the modifying
 def play(player1,player2):
     env=SpaceEnv(render=True)
@@ -33,12 +33,13 @@ def play(player1,player2):
     recent_window = 200
     #no randomization
     epsilon=0
+    env.render_enabled=False
     for episode in range(1000):
         #render every 100th game
-        if episode%100==0:
+        """if episode%100==0:
             env.render_enabled=True
         else:
-            env.render_enabled=False
+            env.render_enabled=False"""
         env.reset()
         if random.random() < 0.5:
             env.add_agent("green")
@@ -71,14 +72,17 @@ def play(player1,player2):
         win_history.append(winner)
         if len(win_history) > recent_window:
             win_history.pop(0)
-
-        if episode % 10 == 0:
-            print("Episode", episode, "completed.")
+        if episode%10==0:
+            print(f"Models trained {number_episodes_trained}: {(episode/10):.2f}%", end='\r')
+    
     g_wr = env.stats["green"]["winrate"]
     b_wr = env.stats["blue"]["winrate"]
-    print("Green WR:", g_wr)
-    print("Blue  WR:", b_wr)
-    print(f"Games played - Green: {env.stats['green']['games']}, Blue: {env.stats['blue']['games']}")
+    print(f"With {number_episodes_trained} episodes of training, MADRL WR: {g_wr}, Vanilla DQN WR: {b_wr}")
+    #print("Green WR:", g_wr)
+    #print("Blue  WR:", b_wr)
+    #print(f"Games played - Green: {env.stats['green']['games']}, Blue: {env.stats['blue']['games']}")
 
 if __name__ == "__main__":
-    play("trained_models/madrl2_bullets_9250.pth","trained_models/dqn2_bullets_9000.pth")
+    for sets in range(0,40):
+        play(f"trained_models/madrl_bullets_{number_episodes_trained}.pth",f"trained_models/dqn_bullets_{number_episodes_trained}.pth")
+        number_episodes_trained+=500
